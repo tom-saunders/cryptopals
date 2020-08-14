@@ -26,9 +26,9 @@ jobs:
                     mkdir -p ~/circleci-cryptopals/test-results
                     pipenv run ./base.py --output ~/circleci-cryptopals/test-results
             - store_test_results:
-                path: ~circleci-cryptopals/test-results
+                path: ~/circleci-cryptopals/test-results
             - store_artifacts:
-                path: test-results
+                path: ~/circleci-cryptopals/test-results
                 destination: tr1
 
 #orbs:
