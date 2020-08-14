@@ -1,0 +1,51 @@
+version: 2.1
+
+jobs:
+    build:
+        working_directory: ~/circleci-cyptopals
+        docker:
+            - image: circleci/python:3.8.5
+              environment:
+                PIPENV_VENV_IN_PROJECT: true
+        steps:
+            - checkout
+            - run: sudo chown -R circleci:circleci /usr/local/bin
+            - run: sudo chown -R circleci:circleci /usr/local/bin/python3.8/site-packages
+            - restore_cache:
+                key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+            - run:
+                command: |
+                    sudo pip install pipenv
+                    pipenv install
+            - save_cache: # cache Python dependencies using checksum of Pipfile as the cache-key
+                key: deps9-{{ .Branch }}-{{ checksum "Pipfile.lock" }}
+                paths:
+                    - "venv"
+            - run:
+                command: |
+                    pipenv run ./base.py
+            - store_test_results:
+                path: test-results
+            - store_artifacts:
+                path: test-results
+                destination: tr1
+
+#orbs:
+#  python: circleci/python@0.2.1
+#
+#jobs:
+#  build-and-test:
+#    executor: python/default
+#    steps:
+#      - checkout
+#      - python/load-cache
+#      - python/install-deps
+#      - python/save-cache
+#      - run:
+#          command: ./manage.py test
+#          name: Test
+#
+#workflows:
+#  main:
+#    jobs:
+#      - build-and-test

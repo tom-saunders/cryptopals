@@ -130,3 +130,5 @@ dmypy.json
 
 # Vim recovery files
 .*.swp
+
+test-reports/

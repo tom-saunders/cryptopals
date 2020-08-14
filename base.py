@@ -6,6 +6,8 @@ import os
 import sys
 import unittest
 
+import xmlrunner
+
 import util
 
 def setup():
@@ -31,14 +33,24 @@ def setup():
             action = 'count',
             default = 1,
             required = False)
+    argparser.add_argument(
+            '-o',
+            '--output',
+            default = 'test-reports',
+            type = str,
+            required = False)
 
     args = argparser.parse_args()
 
     util.set_tasks(args.tasks)
     util.set_task_level(args.level)
-    
+
     return args
 
 if __name__ == '__main__':
     args = setup()
-    unittest.main(module = None, argv = [sys.argv[0]], verbosity = args.verbose)
+    unittest.main(
+            module = None,
+            argv = [sys.argv[0]],
+            testRunner=xmlrunner.XMLTestRunner(output=args.output),
+            verbosity = args.verbose)
