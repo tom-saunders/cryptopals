@@ -1,5 +1,11 @@
+import re
+
 import bidict
 import bitstring
+
+class Base64Exception(Exception):
+    def __init__(self, *args, **kwargs):
+        super(Base64Exception, self).__init__(*args, **kwargs)
 
 _base64_map = bidict.bidict({
     'A': '000000',
@@ -69,81 +75,106 @@ _base64_map = bidict.bidict({
 })
 
 def _base64_char_to_bits(base64_char):
-
-    #if len(base64_char) != 1:
-    #    raise Exception('Can only convert one char at a time')
+    if len(base64_char) != 1:
+        raise Base64Exception('Can only convert one base64 char at a time')
     lookup = _base64_map.get(base64_char, None)
     if lookup:
         return bitstring.Bits(bin = lookup)
     else:
-        raise Exception('Cannot convert input [{}] as a base64 char to bits'.format(chr(base64_char)))
+        raise Base64Exception('Invalid input: [{}] is not a base64 char'.format(chr(base64_char)))
 
 def _base64_bits_to_char(base64_bits):
     bits = base64_bits.bin
     if len(bits) != 6:
-        raise Exception('Can only convert six bits at a time')
+        raise Base64Exception('Must convert six bits at a time')
     lookup = _base64_map.inverse.get(bits, None)
     if lookup:
         return lookup
     else:
-        raise Exception('Cannot convert input [{}] as base64 bits to char'.format(base64_bits))
+        raise Base64Exception('Failed to convert input [{}] bits to base64 char'.format(base64_bits))
 
-def _encode_3byte_to_4char(input_bytes, include_padding = True):
+def _encode_3byte_to_4char(input_bytes):
     chars = ''
     if len(input_bytes) > 3:
-        raise Exception('Can only encode input three bytes at a time')
-    elif len(input_bytes) == 3:
-        bitstr = bitstring.Bits(bytes = input_bytes, length = 24)
-        chars += _base64_bits_to_char(bitstr[0:6])
-        chars += _base64_bits_to_char(bitstr[6:12])
-        chars += _base64_bits_to_char(bitstr[12:18])
-        chars += _base64_bits_to_char(bitstr[18:24])
-    elif len(input_bytes) == 2:
-        bitstr = bitstring.Bits(bytes=  input_bytes, length = 16) + bitstring.Bits(bin = '00')
-        chars += _base64_bits_to_char(bitstr[0:6])
-        chars += _base64_bits_to_char(bitstr[6:12])
-        chars += _base64_bits_to_char(bitstr[12:18])
-        if include_padding:
-            chars += '='
-    elif len(input_bytes) == 1:
-        bitstr = bitstring.Bits(bytes = input_bytes, length = 8) + bitstring.Bits(bin = '0000')
-        chars += _base64_bits_to_char(bitstr[0:6])
-        chars += _base64_bits_to_char(bitstr[6:12])
-        if include_padding:
-            chars += '=='
-    else:
-        # been passed an empty byte array?
-        pass
-    return chars
+        raise Base64Exception('Can only encode three bytes at a time')
+    elif len(input_bytes) == 0:
+        raise Base64Exception('Cannot encode empty bytes')
+
+    provided_bits = len(input_bytes) * 8
+    converting_bits = int(int(provided_bits + 5) / 6) * 6
+    bitstr = bitstring.Bits(bytes = input_bytes, length = provided_bits) + bitstring.Bits(bin = '0000')
+    for idx in range(0, converting_bits, 6):
+        new_char = _base64_bits_to_char(bitstr[idx:idx + 6])
+        chars += new_char
+    chars += '=='
+    return chars[0:4]
 
 def _decode_4char_to_3byte(input_chars):
     if len(input_chars) > 4:
-        raise Exception('Can only decode input four chars at a time')
+        raise Base64Exception('Can only decode input four chars at a time')
     depadded_input = input_chars.replace('=', '')
     if len(depadded_input) < 2:
-        raise Exception('Must have at least two non-padding characters to decode')
+        raise Base64Exception('Must have at least two non-padding characters to decode')
+
+    provided_bits = len(depadded_input) * 6
+    required_bits = int(int(provided_bits) / 8) * 8
+
     bits = _base64_char_to_bits(depadded_input[0])
     bits += _base64_char_to_bits(depadded_input[1])
-    if len(depadded_input) == 2:
-        decoded_bytes = bits[0:7].tobytes()
-    if len(depadded_input) == 3:
+    if len(depadded_input) >= 3:
         bits += _base64_char_to_bits(depadded_input[2])
-        decoded_bytes = bits[0:15].tobytes()
     if len(depadded_input) == 4:
-        bits += _base64_char_to_bits(depadded_input[2])
         bits += _base64_char_to_bits(depadded_input[3])
-        decoded_bytes = bits.tobytes()
+    decoded_bytes = bits[0:required_bits].tobytes()
     return decoded_bytes
 
-def decode(base64_chars, assume_padding = False):
+_base64_pattern = re.compile(r'^(?:(([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{0,3}))(={0,2}))?$')
+_base64_2char_trail = re.compile(r'[A-Za-z0-9+/][AQgw]')
+_base64_3char_trail = re.compile(r'[A-Za-z0-9+/]{2}([AEIMQUYcgkosw048])')
+
+def _decode(base64_str, assume_padding = False):
     decoded = b''
-    for idx in range(0, len(base64_chars), 4):
-        dec = _decode_4char_to_3byte(base64_chars[idx:idx+4])
+
+    match = _base64_pattern.match(base64_str)
+    if not match:
+        raise Base64Exception('Malformed base64 string: [{}]'.format(base64_str))
+    base64_value = match.group(1)
+    base64_pretrail = match.group(2)
+    if not base64_pretrail:
+        base64_pretrail = ''
+    base64_trail = match.group(3)
+    if not base64_trail:
+        base64_trail = ''
+    base64_padding = match.group(4)
+    if not base64_padding:
+        base64_padding = ''
+
+    if len(base64_padding) == 1:
+        if len(base64_trail) != 3:
+            raise Base64Exception('Invalid padding provided for input: [base64_str[0:{}]] + [{}] + [{}]'.format(len(base64_pretrail), base64_trail, base64_padding))
+    elif len(base64_padding) == 2:
+        if len(base64_trail) != 2:
+            raise Base64Exception('Invalid padding provided for input: [base64_str[0:{}]] + [{}] + [{}]'.format(len(base64_pretrail), base64_trail, base64_padding))
+
+    if len(base64_trail) == 1:
+            raise Base64Exception('Invalid trailing single character provided for input: [base64_str[0:{}]] + [{}] + [{}]'.format(len(base64_pretrail), base64_trail, base64_padding))
+
+    if len(base64_trail) == 2:
+        trail_match = _base64_2char_trail.match(base64_trail)
+        if not trail_match:
+            raise Base64Exception('Invalid final trailing character provided for input: [base64_str[0:{}]] + [{}] + [{}] (Final char must be [AQgw])'.format(len(base64_pretrail), base64_trail, base64_padding))
+    elif len(base64_trail) == 3:
+        trail_match = _base64_3char_trail.match(base64_trail)
+        if not trail_match:
+            raise Base64Exception('Invalid final trailing character provided for input: [base64_str[0:{}]] + [{}] + [{}] (Final char must be [AEIMQUYcgkosw048])'.format(len(base64_pretrail), base64_trail, base64_padding))
+
+    for idx in range(0, len(base64_str), 4):
+        dec = _decode_4char_to_3byte(base64_str[idx:idx+4])
         decoded += dec
 
     return decoded
 
-def encode(byte_str, include_padding = True):
+def _encode(byte_str):
     encoded = ''
     for idx in range(0, len(byte_str), 3):
         enc = _encode_3byte_to_4char(byte_str[idx:idx+3])
