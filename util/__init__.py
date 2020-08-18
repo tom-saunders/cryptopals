@@ -2,6 +2,17 @@ import util.config
 
 _current_max_set = 1
 
+def memoize(f):
+    cache = {}
+
+    def memoized_func(*args):
+        if args not in cache:
+            cache[args] = f(*args)
+        return cache[args]
+
+    memoized_func.cache = cache
+    return memoized_func
+
 def get_tasks():
     return util.config.tasks
 
