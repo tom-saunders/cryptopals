@@ -9,6 +9,10 @@ jobs:
                 PIPENV_VENV_IN_PROJECT: true
                 GIT_LFS_SKIP_SMUDGE: 1
         steps:
+            - run:
+                command: |
+                    sudo apt install git-lfs
+                    git lfs install
             - checkout
             - run: sudo chown -R circleci:circleci /usr/local/bin
             - run: sudo chown -R circleci:circleci /usr/local/lib/python3.8/site-packages
